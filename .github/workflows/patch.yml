@@ -1,0 +1,86 @@
+name: Create Moralerspace IS (Invisible Space)
+
+on:
+  workflow_dispatch: # 手動実行用
+
+jobs:
+  patch-fonts:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install FontForge
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fontforge python3-fontforge
+
+      - name: Download and Unzip
+        run: |
+          # 公式リリース v2.0.0 JPDOC をダウンロード
+          wget https://github.com/yuru7/moralerspace/releases/download/v2.0.0/MoralerspaceJPDOC_v2.0.0.zip
+          
+          # "src_fonts" というディレクトリを作成してそこに解凍（中身のフォルダ名を気にしないため）
+          unzip MoralerspaceJPDOC_v2.0.0.zip -d src_fonts
+
+      - name: Patch Fonts with FontForge (Python)
+        shell: python3 {0}
+        run: |
+          import fontforge
+          import os
+          
+          # 設定
+          input_root = "src_fonts"
+          output_dir = "patched_fonts"
+          
+          # 出力先作成
+          if not os.path.exists(output_dir):
+              os.makedirs(output_dir)
+          
+          print(f"Searching for .ttf files in {input_root}...")
+          
+          files_processed = 0
+
+          # os.walkでディレクトリ階層に関係なく全ファイルを探索
+          for root, dirs, files in os.walk(input_root):
+              for filename in files:
+                  if filename.lower().endswith(".ttf"):
+                      full_path = os.path.join(root, filename)
+                      print(f"Processing: {full_path}")
+                      
+                      try:
+                          # フォントを開く
+                          font = fontforge.open(full_path)
+                          
+                          # U+3000 (IDEOGRAPHIC SPACE) を選択してクリア
+                          # 注意: 0x3000を選択範囲に含めて clear() することでグリフ自体を削除・空にします
+                          font.selection.select(0x3000)
+                          font.clear()
+                          
+                          # ファイル名変更 (例: FontName.ttf -> FontName_IS.ttf)
+                          base_name = os.path.splitext(filename)[0]
+                          new_filename = f"{base_name}_IS.ttf"
+                          output_path = os.path.join(output_dir, new_filename)
+                          
+                          # フォント名などのメタデータも念のため修正したい場合はここで行いますが、
+                          # 今回はグリフ削除のみが目的なので、そのまま生成します。
+                          # generate時にフラグを指定しないことで、可能な限り元の設定を維持します。
+                          font.generate(output_path)
+                          font.close()
+                          
+                          print(f"Saved to: {output_path}")
+                          files_processed += 1
+                          
+                      except Exception as e:
+                          print(f"Error processing {filename}: {e}")
+                          # エラーがあっても他のフォントのために続行する
+
+          if files_processed == 0:
+              print("Error: No .ttf files were found!")
+              exit(1)
+          else:
+              print(f"Success! Processed {files_processed} fonts.")
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Moralerspace_v2.0.0_IS_Patched
+          path: patched_fonts/*.ttf
